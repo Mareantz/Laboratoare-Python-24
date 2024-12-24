@@ -6,16 +6,18 @@ COLOR_3 = "#D8B98A"  # bej (fundal)
 
 
 def get_board_state():
-    board = {i: (0, 0) for i in range(24)}
-    board[0] = (0, 2)
-    board[5] = (5, 0)
-    board[7] = (3, 0)
-    board[11] = (0, 5)
-    board[12] = (5, 0)
-    board[16] = (0, 3)
-    board[18] = (0, 5)
-    board[23] = (2, 0)
-    return board
+    triangles = [Triangle(i) for i in range(24)]
+
+    triangles[0].pieces_black = 2
+    triangles[5].pieces_white = 5
+    triangles[7].pieces_white = 3
+    triangles[11].pieces_black = 5
+    triangles[12].pieces_white = 5
+    triangles[16].pieces_black = 3
+    triangles[18].pieces_black = 5
+    triangles[23].pieces_white = 2
+
+    return triangles
 
 
 def get_triangle_coords(i, segment_width, W, H, top):
@@ -30,18 +32,82 @@ def get_triangle_coords(i, segment_width, W, H, top):
         return [x_left, H, x_right, H, (x_left + x_right) / 2, H / 2]
 
 
+class Triangle:
+    def __init__(self, index, pieces_white=0, pieces_black=0):
+        self.index = index
+        self.pieces_white = pieces_white
+        self.pieces_black = pieces_black
+
+    def add_piece(self, color):
+        if color == 'white':
+            self.pieces_white += 1
+        elif color == 'black':
+            self.pieces_black += 1
+
+    def remove_piece(self, color):
+        if color == 'white' and self.pieces_white > 0:
+            self.pieces_white -= 1
+        if color == 'black' and self.pieces_black > 0:
+            self.pieces_black -= 1
+
+    def can_move(self, color):
+        opponent_count = self.pieces_black if color == 'white' else self.pieces_white
+        return opponent_count < 2
+
+
 class BackgammonBoard:
     def __init__(self, parent, is_white_home_right=True):
         self.parent = parent
         self.is_white_home_right = is_white_home_right
-        self.board_state = get_board_state()
+        self.triangles = get_board_state()
         self.canvas = tk.Canvas(self.parent, bg=COLOR_3)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Configure>", self.on_resize)
+        self.canvas.bind("<Button-1>", self.on_triangle_click)
+        self.segment_width = None
 
     def on_resize(self, event):
+        self.segment_width = event.width / 13.0
         self.canvas.delete("all")
         self.draw_board(event.width, event.height)
+
+    def on_triangle_click(self, event):
+
+        if not self.segment_width:
+            return
+
+        segment_width = self.segment_width
+        height = self.canvas.winfo_height()
+        top_row = event.y < height / 2
+
+        col = int(event.x // segment_width)
+        if col == 6:
+            print("Clicked on the bar")
+            return
+        col = col if col < 6 else col - 1
+
+        if top_row:
+            index = col + 12 if self.is_white_home_right else 23 - col
+        else:
+            index = 11-col if self.is_white_home_right else col
+
+        x_left = col * segment_width if col < 6 else (col + 1) * segment_width
+        x_right = x_left + segment_width
+
+        if top_row:
+            triangle_height = height / 2
+            x_center = (x_left + x_right) / 2
+            if event.y > triangle_height * (1 - abs(event.x - x_center) / (segment_width / 2)):
+                print("Clicked in the space between top triangles")
+                return
+        else:
+            triangle_height = height / 2
+            x_center = (x_left + x_right) / 2
+            if event.y < height - triangle_height * (1 - abs(event.x - x_center) / (segment_width / 2)):
+                print("Clicked in the space between bottom triangles")
+                return
+
+        print(f"Clicked triangle index: {index}")
 
     def draw_board(self, width, height):
         segment_width = width / 13.0
@@ -53,16 +119,16 @@ class BackgammonBoard:
         self.draw_pieces(width, height)
 
     def draw_triangles(self, width, height):
-        segment_width = width / 13.0
+        self.segment_width = width / 13.0
 
         for i in range(12):
             for top in [False, True]:
-                coords = get_triangle_coords(i, segment_width, width, height, top)
+                coords = get_triangle_coords(i, self.segment_width, width, height, top)
                 color = COLOR_1 if (i % 2 == 0) else COLOR_2
                 self.canvas.create_polygon(*coords, fill=color, outline="black")
 
     def draw_pieces(self, width, height):
-        segment_width = width / 13.0
+        segment_width = self.segment_width
         checker_radius = max(5, int(min(width, height) / 40))
 
         if self.is_white_home_right:
@@ -73,8 +139,8 @@ class BackgammonBoard:
             top_idx = list(range(0, 12))
 
         # Bottom
-        for i, idx in enumerate(reversed(bottom_idx)):
-            w_count, b_count = self.board_state[idx]
+        for i, triangle in enumerate(reversed([self.triangles[idx] for idx in bottom_idx])):
+            w_count, b_count = triangle.pieces_white, triangle.pieces_black
             if w_count == 0 and b_count == 0:
                 continue
 
@@ -91,8 +157,8 @@ class BackgammonBoard:
                 self.draw_one_piece(x_center, y, "black", checker_radius)
 
         # Upper
-        for i, idx in enumerate(top_idx):
-            w_count, b_count = self.board_state[idx]
+        for i, triangle in enumerate([self.triangles[idx] for idx in top_idx]):
+            w_count, b_count = triangle.pieces_white, triangle.pieces_black
             if w_count == 0 and b_count == 0:
                 continue
 
