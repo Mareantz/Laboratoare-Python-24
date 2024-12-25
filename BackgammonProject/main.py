@@ -37,6 +37,7 @@ class Triangle:
         self.index = index
         self.pieces_white = pieces_white
         self.pieces_black = pieces_black
+        self.highlight_color = None
 
     def add_piece(self, color):
         if color == 'white':
@@ -66,6 +67,8 @@ class BackgammonBoard:
         self.canvas.bind("<Configure>", self.on_resize)
         self.canvas.bind("<Button-1>", self.on_triangle_click)
         self.segment_width = None
+        self.selected_triangle = None
+        self.current_player_color = "white" if is_white_home_right else "black"
 
     def on_resize(self, event):
         self.segment_width = event.width / 13.0
@@ -73,7 +76,6 @@ class BackgammonBoard:
         self.draw_board(event.width, event.height)
 
     def on_triangle_click(self, event):
-
         if not self.segment_width:
             return
 
@@ -92,28 +94,63 @@ class BackgammonBoard:
         else:
             index = 11 - col if self.is_white_home_right else col
 
-        x_left = col * segment_width if col < 6 else (col + 1) * segment_width
-        x_right = x_left + segment_width
+        print('Clicked on the triangle {0}'.format(index))
 
-        if top_row:
-            triangle_height = height / 2
-            x_center = (x_left + x_right) / 2
-            if event.y > triangle_height * (1 - abs(event.x - x_center) / (segment_width / 2)):
-                print("Clicked in the space between top triangles")
-                return
+        # Check if the triangle has the current player's pieces
+        triangle = self.triangles[index]
+        if (self.current_player_color == "white" and triangle.pieces_white > 0) or \
+                (self.current_player_color == "black" and triangle.pieces_black > 0):
+            self.selected_triangle = index  # Select this triangle
+            self.highlight_possible_moves(index)  # Highlight possible moves
         else:
-            triangle_height = height / 2
-            x_center = (x_left + x_right) / 2
-            if event.y < height - triangle_height * (1 - abs(event.x - x_center) / (segment_width / 2)):
-                print("Clicked in the space between bottom triangles")
-                return
+            self.selected_triangle = None  # Deselect if invalid
 
-        print(f"Clicked triangle index: {index}")
+        # Redraw the board
+        self.canvas.delete("all")
+        self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
+
+    def highlight_possible_moves(self, start_index):
+        """
+        Highlight possible moves based on the current dice rolls.
+        """
+        self.reset_highlights()  # Clear previous highlights
+
+        moves = []
+        dice_values = self.dice.rolls
+
+        for die in dice_values:
+            target_index = self.calculate_target_index(start_index, die)
+            if target_index is not None:
+                moves.append(target_index)
+
+        # Highlight combinations of dice rolls
+        if len(dice_values) > 1:
+            combined_roll = sum(dice_values[:2])
+            target_index = self.calculate_target_index(start_index, combined_roll)
+            if target_index is not None:
+                moves.append(target_index)
+
+        # Mark the possible moves
+        for move in moves:
+            if 0 <= move < 24:  # Ensure valid range
+                self.triangles[move].highlight_color = "green"
+
+    def reset_highlights(self):
+        """
+        Reset all triangle highlights.
+        """
+        for triangle in self.triangles:
+            triangle.highlight_color = None
+
+
+    def calculate_target_index(self, start_index, distance):
+        target_index = start_index - distance  # White moves downward (23 to 0)
+        print(target_index)
+        if 0 <= target_index < 24:
+            return target_index
+        return None
 
     def roll_dice(self):
-        """
-        Rolls the dice and redraws the board.
-        """
         self.dice.roll()
         self.canvas.delete("all")
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
@@ -134,8 +171,12 @@ class BackgammonBoard:
         for i in range(12):
             for top in [False, True]:
                 coords = get_triangle_coords(i, self.segment_width, width, height, top)
-                color = COLOR_1 if (i % 2 == 0) else COLOR_2
+                if self.triangles[i].highlight_color:
+                    color = self.triangles[i].highlight_color
+                else:
+                    color = COLOR_1 if (i % 2 == 0) else COLOR_2
                 self.canvas.create_polygon(*coords, fill=color, outline="black")
+                self.triangles[i].highlight_color = None  # Reset highlight color
 
     def draw_pieces(self, width, height):
         segment_width = self.segment_width
