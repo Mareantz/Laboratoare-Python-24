@@ -117,17 +117,38 @@ class BackgammonBoard:
         else:
             index = 11 - col if self.is_white_home_right else col
 
-        print(f"Clicked on triangle {index}")
-        triangle = self.triangles[index]
-        has_pieces = (triangle.pieces_white > 0 if self.current_player_color == "white" else triangle.pieces_black > 0)
-        if has_pieces:
-            self.selected_triangle = index
-            self.highlight_possible_moves(index)
+        if self.selected_triangle is None:
+            triangle = self.triangles[index]
+            has_pieces = (triangle.pieces_white > 0 if self.current_player_color == "white"
+                          else triangle.pieces_black > 0)
+            if has_pieces:
+                self.selected_triangle = index
+                self.highlight_possible_moves(index)
+            else:
+                print("No pieces to select here.")
         else:
-            self.selected_triangle = None
+            if self.triangles[index].highlight_color == "green":
+                self.move_piece(self.selected_triangle, index)
+                self.reset_highlights()
+                self.selected_triangle = None
+
+            else:
+                print("Invalid move")
+                self.reset_highlights()
+                self.selected_triangle = None
 
         self.canvas.delete("all")
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
+
+    def move_piece(self, start_index, target_index):
+        start_triangle = self.triangles[start_index]
+        target_triangle = self.triangles[target_index]
+
+        start_triangle.remove_piece(self.current_player_color)
+        target_triangle.add_piece(self.current_player_color)
+
+        distance_used = abs(start_index - target_index)
+        self.dice.use_distance(distance_used)
 
     def highlight_possible_moves(self, start_index):
         self.reset_highlights()
@@ -144,9 +165,12 @@ class BackgammonBoard:
             t.highlight_color = None
 
     def roll_dice(self):
-        self.dice.roll()
-        self.canvas.delete("all")
-        self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
+        if not self.dice.has_rolled:
+            self.dice.roll()
+            self.canvas.delete("all")
+            self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
+        else:
+            print("Already rolled")
 
     def get_triangle_index_and_top(self, idx):
         if self.is_white_home_right:
@@ -172,12 +196,10 @@ class BackgammonBoard:
         for idx in range(24):
             i, top = self.get_triangle_index_and_top(idx)
             coords = get_triangle_coords(i, self.segment_width, width, height, top)
-            color = COLOR_1 if i % 2 == 0 else COLOR_2
+            color = self.triangles[idx].highlight_color or (
+                COLOR_1 if i % 2 == 0 else COLOR_2
+            )
             self.canvas.create_polygon(*coords, fill=color, outline="black")
-
-            if self.triangles[idx].highlight_color:
-                self.canvas.create_polygon(*coords, fill=self.triangles[idx].highlight_color, outline="black")
-                self.triangles[idx].highlight_color = None
 
     def draw_pieces(self, width, height):
         piece_radius = max(5, int(min(width, height) / 40))
@@ -236,15 +258,56 @@ def draw_dice_face(canvas, dice_value, x1, y1, x2, y2):
 class Dice:
     def __init__(self):
         self.rolls = []
+        self.used_rolls = []
+        self.initial_roll_order = []
+        self.has_rolled = False
 
     def roll(self):
         import random
+        if self.has_rolled:
+            print("Already rolled")
+            return
         d1 = random.randint(1, 6)
         d2 = random.randint(1, 6)
         if d1 == d2:
             self.rolls = [d1, d1, d1, d1]
         else:
             self.rolls = [d1, d2]
+        self.initial_roll_order = self.rolls.copy()
+        self.used_rolls = []
+        self.has_rolled = True
+
+    def reset_roll(self):
+        self.has_rolled = False
+        self.rolls = []
+        self.used_rolls = []
+        self.initial_roll_order = []
+
+    def use_distance(self, distance):
+        if distance in self.rolls:
+            self.rolls.remove(distance)
+            self.used_rolls.append(distance)
+            print(f"Used single die: {distance}")
+        else:
+            removed = False
+            for i in range(len(self.rolls)):
+                for j in range(i + 1, len(self.rolls)):
+                    if self.rolls[i] + self.rolls[j] == distance:
+                        val1 = self.rolls[i]
+                        val2 = self.rolls[j]
+                        self.used_rolls.append(val1)
+                        self.used_rolls.append(val2)
+                        if j > i:
+                            self.rolls.pop(j)
+                            self.rolls.pop(i)
+                        else:
+                            self.rolls.pop(i)
+                            self.rolls.pop(j)
+                        print(f"Used combined dice: {val1}+{val2} = {distance}")
+                        removed = True
+                        break
+                if removed:
+                    break
 
     def draw(self, canvas, width, height):
         segment_width = width / 13
@@ -257,7 +320,11 @@ class Dice:
         center_x = (bar_left + bar_right) / 2
         center_y = height / 2
 
-        num_dice = len(self.rolls)
+        all_dice = [
+            {"value": val, "used": val in self.used_rolls}
+            for val in self.initial_roll_order
+        ]
+        num_dice = len(all_dice)
         rows = 2 if num_dice > 2 else 1
         cols = 2 if num_dice > 1 else 1
 
@@ -267,7 +334,7 @@ class Dice:
         start_x = center_x - total_width / 2
         start_y = center_y - total_height / 2
 
-        for i, roll_value in enumerate(self.rolls):
+        for i, die in enumerate(all_dice):
             row = i // 2
             col = i % 2
 
@@ -277,8 +344,15 @@ class Dice:
             x2 = x1 + dice_size
             y2 = y1 + dice_size
 
-            canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="black", width=2)
-            draw_dice_face(canvas, roll_value, x1, y1, x2, y2)
+            if die["used"]:
+                fill_color = "#CCCCCC"
+                outline_color = "#666666"
+            else:
+                fill_color = "white"
+                outline_color = "black"
+
+            canvas.create_rectangle(x1, y1, x2, y2, fill=fill_color, outline=outline_color, width=2)
+            draw_dice_face(canvas, die["value"], x1, y1, x2, y2)
 
 
 class MainMenu:
