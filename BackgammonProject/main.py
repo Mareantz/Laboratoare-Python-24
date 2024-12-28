@@ -251,6 +251,7 @@ class BackgammonBoard:
     def calculate_user_target_index(self, start_index, distance):
         user_moves_up = (
                 (self.current_player_color == 'black' and self.is_white_home_right) or
+                (self.current_player_color == 'white' and not self.is_white_home_right)
         )
         return calculate_target_index(start_index, distance, user_moves_up)
 
