@@ -78,6 +78,9 @@ class BackgammonBoard:
         self.triangles = get_board_state(is_white_home_right)
         self.dice = Dice()
 
+        self.bar_white = 0
+        self.bar_black = 0
+
         self.canvas = tk.Canvas(self.parent, bg=COLOR_3)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Configure>", self.on_resize)
@@ -97,29 +100,62 @@ class BackgammonBoard:
     def ai_move(self):
         self.dice.roll()
         print(f"AI rolled: {self.dice.rolls}")
-        dice_values = self.dice.rolls[:]
 
-        for roll in dice_values:
-            candidate_starts = []
-            for idx, tr in enumerate(self.triangles):
-                count = tr.pieces_white if self.ai_color == 'white' else tr.pieces_black
-                if count > 0:
-                    target_idx = self.calculate_ai_target_index(idx, roll)
-                    if target_idx is not None and self.triangles[target_idx].can_move(self.ai_color):
-                        candidate_starts.append(idx)
-            if candidate_starts:
-                start_idx = random.choice(candidate_starts)
-                target_idx = self.calculate_ai_target_index(start_idx, roll)
-                self.move_piece(start_idx, target_idx)
-                self.reset_highlights()
-                self.selected_triangle = None
+        while (self.ai_color == 'white' and self.bar_white > 0) or \
+                (self.ai_color == 'black' and self.bar_black > 0):
+            used_any = self.ai_reentry()
+            if not used_any:
+                # pass turn
+                break
+
+        if (self.ai_color == 'white' and self.bar_white == 0) or \
+                (self.ai_color == 'black' and self.bar_black == 0):
+
+            can_move_with_remaining = True
+            while self.dice.rolls and can_move_with_remaining:
+                can_move_with_remaining = False
+                for roll in self.dice.rolls[:]:
+                    start_index = self.find_ai_start_for_roll(roll)
+                    if start_index is not None:
+                        target_index = self.calculate_ai_target_index(start_index, roll)
+                        self.move_piece(start_index, target_index)
+                        self.reset_highlights()
+                        can_move_with_remaining = True
+                        break
+
+        if self.dice.rolls:
+            print("AI passing turn.")
+            self.dice.reset_roll()
+
+        self.switch_player()
+
+    def find_ai_start_for_roll(self, roll):
+        for idx, tr in enumerate(self.triangles):
+            count = tr.pieces_white if self.ai_color == 'white' else tr.pieces_black
+            if count > 0:
+                target_index = self.calculate_ai_target_index(idx, roll)
+                if target_index is not None and self.triangles[target_index].can_move(self.ai_color):
+                    return idx
+        return None
+
+    def ai_reentry(self):
+        color = self.ai_color
+        used_any_die = False
+
+        for roll in self.dice.rolls[:]:
+            target_index = self.get_reentry_index(color, roll)
+            if target_index is not None:
+                self.reenter_piece(color, target_index)
+                self.dice.use_distance(roll)
+                used_any_die = True
+                if (color == 'white' and self.bar_white == 0) or \
+                        (color == 'black' and self.bar_black == 0):
+                    break
             else:
-                # TO BE IMPLEMENTED : Pass the turn to the other player
+                # pass turn
                 pass
 
-        if not self.dice.rolls:
-            self.dice.reset_roll()
-        self.switch_player()
+        return used_any_die
 
     def on_resize(self, event):
         self.segment_width = event.width / 13.0
@@ -128,6 +164,23 @@ class BackgammonBoard:
 
     def on_triangle_click(self, event):
         if not self.segment_width:
+            return
+
+        if (self.current_player_color == 'white' and self.bar_white > 0) or \
+                (self.current_player_color == 'black' and self.bar_black > 0):
+
+            x, y = event.x, event.y
+            clicked_index = self.get_triangle_index_by_click(x, y)
+            if clicked_index is not None:
+                if self.triangles[clicked_index].highlight_color == 'green':
+                    self.reenter_piece(self.current_player_color, clicked_index)
+                    distance_used = self.reentry_distance_for_index(clicked_index, self.current_player_color)
+                    if distance_used is not None:
+                        self.dice.use_distance(distance_used)
+
+                self.highlight_bar_reentry_options()
+                self.canvas.delete("all")
+                self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
             return
 
         segment_width = self.segment_width
@@ -167,14 +220,87 @@ class BackgammonBoard:
         self.canvas.delete("all")
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
 
+    def get_triangle_index_by_click(self, x, y):
+        if not self.segment_width:
+            return None
+        col = int(x // self.segment_width)
+        if col == 6:
+            return None
+        col = col if col < 6 else col - 1
+
+        height = self.canvas.winfo_height()
+        top_row = y < height / 2
+
+        if top_row:
+            index = col + 12 if self.is_white_home_right else 23 - col
+        else:
+            index = 11 - col if self.is_white_home_right else col
+
+        if 0 <= index < 24:
+            return index
+        return None
+
+    def reentry_distance_for_index(self, target_index, color):
+        if color == 'white':
+            dist = 24 - target_index
+            if dist in self.dice.rolls and 18 <= target_index <= 23:
+                return dist
+        else:
+            dist = target_index + 1
+            if dist in self.dice.rolls and 0 <= target_index <= 5:
+                return dist
+        return None
+
+    def reenter_piece(self, color, target_index):
+        tri = self.triangles[target_index]
+        opponent_color = 'white' if color == 'black' else 'black'
+        if opponent_color == 'white' and tri.pieces_white == 1:
+            tri.remove_piece('white')
+            self.bar_white += 1
+        elif opponent_color == 'black' and tri.pieces_black == 1:
+            tri.remove_piece('black')
+            self.bar_black += 1
+
+        tri.add_piece(color)
+
+        if color == 'white':
+            self.bar_white -= 1
+        else:
+            self.bar_black -= 1
+
+        self.canvas.delete("all")
+        self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
+
+    def get_reentry_index(self, color, dice_value):
+        if color == 'white':
+            reentry_index = 24 - dice_value
+            if 18 <= reentry_index <= 23:
+                if self.triangles[reentry_index].can_move('white'):
+                    return reentry_index
+        else:
+            reentry_index = dice_value - 1
+            if 0 <= reentry_index <= 5:
+                if self.triangles[reentry_index].can_move('black'):
+                    return reentry_index
+        return None
+
     def move_piece(self, start_index, target_index):
         start_triangle = self.triangles[start_index]
         target_triangle = self.triangles[target_index]
+        distance_used = abs(start_index - target_index)
+
+        if self.current_player_color == 'white':
+            if target_triangle.pieces_black == 1:
+                target_triangle.remove_piece('black')
+                self.bar_black += 1
+        else:
+            if target_triangle.pieces_white == 1:
+                target_triangle.remove_piece('white')
+                self.bar_white += 1
 
         start_triangle.remove_piece(self.current_player_color)
         target_triangle.add_piece(self.current_player_color)
 
-        distance_used = abs(start_index - target_index)
         self.dice.use_distance(distance_used)
 
         if not self.dice.rolls:
@@ -190,9 +316,7 @@ class BackgammonBoard:
             return
 
         dice_values = sorted(self.dice.rolls)
-        possible_moves = []
-
-        possible_moves.extend(dice_values)
+        possible_moves = list(dice_values)
 
         if len(dice_values) >= 2:
             combined_move = dice_values[0] + dice_values[1]
@@ -200,11 +324,12 @@ class BackgammonBoard:
                 possible_moves.append(combined_move)
 
         if len(set(dice_values)) == 1:
-            for i in range(1, 5):
-                cumulative_move = sum(dice_values[:i])
-                if not self.is_partial_double_move_valid(start_index, dice_values[:i]):
+            face = dice_values[0]
+            for i in range(2, len(dice_values) + 1):
+                combined = face * i
+                if not self.is_partial_double_move_valid(start_index, face, i):
                     break
-                possible_moves.append(cumulative_move)
+                possible_moves.append(combined)
 
         possible_moves = sorted(set(possible_moves))
 
@@ -218,7 +343,16 @@ class BackgammonBoard:
         if not valid_moves_found:
             print("No valid moves available with the current dice.")
         else:
-            print("Highlighted possible moves:", [t.index for t in self.triangles if t.highlight_color == "green"])
+            green_list = [t.index for t in self.triangles if t.highlight_color == "green"]
+            print("Highlighted possible moves:", green_list)
+
+    def highlight_bar_reentry_options(self):
+        self.reset_highlights()
+        color = self.current_player_color
+        for d in self.dice.rolls:
+            possible_index = self.get_reentry_index(color, d)
+            if possible_index is not None:
+                self.triangles[possible_index].highlight_color = "green"
 
     def is_combined_move_partially_valid(self, start_index, dice_pair):
         first_move, second_move = dice_pair
@@ -228,31 +362,30 @@ class BackgammonBoard:
         if (first_target is not None and self.triangles[first_target].can_move(self.current_player_color)) or \
                 (second_target is not None and self.triangles[second_target].can_move(self.current_player_color)):
             return True
-
         return False
 
-    def is_partial_double_move_valid(self, start_index, dice_values):
-        cumulative_target = start_index
+    def is_partial_double_move_valid(self, start_index, face, count):
+        current_index = start_index
+        moves_up = self.does_current_player_move_up()
 
-        for step in dice_values:
-            cumulative_target = self.calculate_user_target_index(cumulative_target, step)
-            if cumulative_target is None or not self.triangles[cumulative_target].can_move(self.current_player_color):
+        for _ in range(count):
+            next_index = calculate_target_index(current_index, face, moves_up)
+            if next_index is None or not self.triangles[next_index].can_move(self.current_player_color):
                 return False
-
+            current_index = next_index
         return True
 
+    def does_current_player_move_up(self):
+        return ((self.current_player_color == 'black' and self.is_white_home_right) or
+                (self.current_player_color == 'white' and not self.is_white_home_right))
+
     def calculate_ai_target_index(self, start_index, distance):
-        ai_moves_up = (
-                (self.ai_color == 'black' and self.is_white_home_right) or
-                (self.ai_color == 'white' and not self.is_white_home_right)
-        )
+        ai_moves_up = ((self.ai_color == 'black' and self.is_white_home_right) or
+                       (self.ai_color == 'white' and not self.is_white_home_right))
         return calculate_target_index(start_index, distance, ai_moves_up)
 
     def calculate_user_target_index(self, start_index, distance):
-        user_moves_up = (
-                (self.current_player_color == 'black' and self.is_white_home_right) or
-                (self.current_player_color == 'white' and not self.is_white_home_right)
-        )
+        user_moves_up = self.does_current_player_move_up()
         return calculate_target_index(start_index, distance, user_moves_up)
 
     def reset_highlights(self):
@@ -262,10 +395,30 @@ class BackgammonBoard:
     def roll_dice(self):
         if not self.dice.has_rolled:
             self.dice.roll()
+            if (self.current_player_color == 'white' and self.bar_white > 0) or \
+                    (self.current_player_color == 'black' and self.bar_black > 0):
+                self.highlight_bar_reentry_options()
+
             self.canvas.delete("all")
             self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
         else:
             print("Already rolled")
+
+    def draw_board(self, width, height):
+        bar_left = 6 * self.segment_width
+        bar_right = 7 * self.segment_width
+        self.canvas.create_rectangle(bar_left, 0, bar_right, height, fill="#444", outline="black")
+        self.draw_triangles(width, height)
+        self.draw_pieces(width, height)
+        self.dice.draw(self.canvas, width, height)
+        self.draw_bar_pieces()
+
+    def draw_triangles(self, width, height):
+        for idx in range(24):
+            i, top = self.get_triangle_index_and_top(idx)
+            coords = get_triangle_coords(i, self.segment_width, width, height, top)
+            color = self.triangles[idx].highlight_color or (COLOR_1 if i % 2 == 0 else COLOR_2)
+            self.canvas.create_polygon(*coords, fill=color, outline="black")
 
     def get_triangle_index_and_top(self, idx):
         if self.is_white_home_right:
@@ -278,21 +431,6 @@ class BackgammonBoard:
                 return idx - 12, True
             else:
                 return idx, False
-
-    def draw_board(self, width, height):
-        bar_left = 6 * self.segment_width
-        bar_right = 7 * self.segment_width
-        self.canvas.create_rectangle(bar_left, 0, bar_right, height, fill="#444", outline="black")
-        self.draw_triangles(width, height)
-        self.draw_pieces(width, height)
-        self.dice.draw(self.canvas, width, height)
-
-    def draw_triangles(self, width, height):
-        for idx in range(24):
-            i, top = self.get_triangle_index_and_top(idx)
-            coords = get_triangle_coords(i, self.segment_width, width, height, top)
-            color = self.triangles[idx].highlight_color or (COLOR_1 if i % 2 == 0 else COLOR_2)
-            self.canvas.create_polygon(*coords, fill=color, outline="black")
 
     def draw_pieces(self, width, height):
         piece_radius = max(5, int(min(width, height) / 40))
@@ -324,8 +462,32 @@ class BackgammonBoard:
         draw_pieces_on_column([self.triangles[x] for x in top_index], 20, 1)
 
     def draw_one_piece(self, x, y, color, piece_radius):
-        self.canvas.create_oval(x - piece_radius, y - piece_radius, x + piece_radius, y + piece_radius, fill=color,
-                                outline="black", width=2)
+        self.canvas.create_oval(x - piece_radius, y - piece_radius,
+                                x + piece_radius, y + piece_radius,
+                                fill=color, outline="black", width=2)
+
+    def draw_bar_pieces(self):
+        bar_left = 6 * self.segment_width
+        bar_right = 7 * self.segment_width
+        bar_mid_x = (bar_left + bar_right) / 2
+
+        piece_radius = max(5, int(min(self.canvas.winfo_width(), self.canvas.winfo_height()) / 40))
+        spacing = 2 * piece_radius
+
+        for i in range(self.bar_black):
+            x = bar_mid_x
+            y = 50 + i * spacing
+            self.canvas.create_oval(x - piece_radius, y - piece_radius,
+                                    x + piece_radius, y + piece_radius,
+                                    fill="black", outline="white", width=2)
+
+        canvas_height = self.canvas.winfo_height()
+        for i in range(self.bar_white):
+            x = bar_mid_x
+            y = canvas_height - 50 - i * spacing  # stack them upward
+            self.canvas.create_oval(x - piece_radius, y - piece_radius,
+                                    x + piece_radius, y + piece_radius,
+                                    fill="white", outline="black", width=2)
 
 
 def draw_dice_face(canvas, dice_value, x1, y1, x2, y2):
@@ -380,41 +542,61 @@ class Dice:
         self.moves_used = 0
 
     def use_distance(self, distance):
-        if self.moves_used >= 4:
-            print("Maximum moves for doubles reached.")
-            raise ValueError("Exceeded allowed moves for doubles.")
+        if not self.rolls:
+            return
 
         if distance in self.rolls:
             self.rolls.remove(distance)
             self.used_rolls.append(distance)
             self.moves_used += 1
             print(f"Used single die: {distance}")
-        else:
-            removed = False
-            for i in range(len(self.rolls)):
-                for j in range(i + 1, len(self.rolls)):
-                    if self.rolls[i] + self.rolls[j] == distance:
-                        val1 = self.rolls[i]
-                        val2 = self.rolls[j]
-                        self.used_rolls.extend([val1, val2])
-                        if j > i:
-                            self.rolls.pop(j)
-                            self.rolls.pop(i)
-                        else:
-                            self.rolls.pop(i)
-                            self.rolls.pop(j)
-                        self.moves_used += 2
-                        print(f"Used combined dice: {val1} + {val2} = {distance}")
-                        removed = True
-                        break
-                if removed:
-                    break
+            return
 
-        if len(set(self.initial_roll_order)) == 1 and self.moves_used >= 4:
-            self.rolls.clear()
+        if len(set(self.rolls)) == 1:
+            face = self.rolls[0]
+            available_count = len(self.rolls)
+            if distance % face == 0:
+                k = distance // face
+                if k <= available_count:
+                    for _ in range(k):
+                        self.rolls.remove(face)
+                        self.used_rolls.append(face)
+                        self.moves_used += 1
+                    print(f"Used double dice multiple: {distance} ({k}×{face})")
+                    if not self.rolls:
+                        print("Exhausted moves for doubles.")
+                    return
+
+        if self._remove_combination_that_sums(distance, [], 0):
+            print(f"Used combined dice = {distance}")
+        else:
+            print(f"Could not use distance = {distance} with dice = {self.rolls}")
+
+        if len(set(self.initial_roll_order)) == 1 and not self.rolls:
             print("Exhausted moves for doubles.")
 
+    def _remove_combination_that_sums(self, target, chosen, start_index):
+        if target == 0 and chosen:
+            for val in chosen:
+                self.rolls.remove(val)
+                self.used_rolls.append(val)
+                self.moves_used += 1
+            return True
+        if target < 0:
+            return False
+
+        for i in range(start_index, len(self.rolls)):
+            val = self.rolls[i]
+            chosen.append(val)
+            if self._remove_combination_that_sums(target - val, chosen, i + 1):
+                return True
+            chosen.pop()
+
+        return False
+
     def draw(self, canvas, width, height):
+        if not self.initial_roll_order:
+            return
         segment_width = width / 13
         bar_left = 6 * segment_width
         bar_right = 7 * segment_width
@@ -425,10 +607,18 @@ class Dice:
         center_x = (bar_left + bar_right) / 2
         center_y = height / 2
 
-        all_dice = [
-            {"value": val, "used": val in self.used_rolls}
-            for val in self.initial_roll_order
-        ]
+        used_vals_count = {}
+        for v in self.used_rolls:
+            used_vals_count[v] = used_vals_count.get(v, 0) + 1
+
+        all_dice = []
+        for val in self.initial_roll_order:
+            if used_vals_count.get(val, 0) > 0:
+                all_dice.append({"value": val, "used": True})
+                used_vals_count[val] -= 1
+            else:
+                all_dice.append({"value": val, "used": False})
+
         num_dice = len(all_dice)
         rows = 2 if num_dice > 2 else 1
         cols = 2 if num_dice > 1 else 1
