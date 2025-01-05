@@ -20,6 +20,15 @@ client_socket = None
 
 
 def listen_from_server(board_app):
+    """
+    Listens for messages from the server and updates the game state accordingly.
+
+    Continuously receives data from the server, deserializes it, and performs actions based on
+    the message type, such as updating the game state or handling turn changes.
+
+    Parameters:
+        board_app (BackgammonBoard): The instance of the BackgammonBoard to update.
+    """
     global client_socket
     if client_socket is None:
         logging.error("Socket is not connected.")
@@ -45,6 +54,14 @@ def listen_from_server(board_app):
 
 
 def send_message_to_server(msg):
+    """
+    Sends a serialized message to the server.
+
+    Serializes the provided message using pickle and sends it through the client socket.
+
+    Parameters:
+        msg (dict): The message to send, typically containing 'type' and 'data' keys.
+    """
     global client_socket
     if client_socket is None:
         logging.error("Socket is not connected.")
@@ -57,6 +74,19 @@ def send_message_to_server(msg):
 
 
 def get_board_state(player_color="white"):
+    """
+    Initializes the board state based on the player's color.
+
+    Sets up the initial positions of the pieces on the board. If the player is black,
+    it mirrors the standard white setup to maintain symmetry.
+
+    Parameters:
+        player_color (str, optional): The color of the player ("white" or "black").
+                                       Defaults to "white".
+
+    Returns:
+        list of Triangle: A list containing 24 Triangle instances representing the board.
+    """
     triangles = [Triangle(i) for i in range(24)]
     config = {
         0: {"black": 2}, 5: {"white": 5}, 7: {"white": 3}, 11: {"black": 5},
@@ -78,6 +108,21 @@ def get_board_state(player_color="white"):
 
 
 def get_triangle_coords(index, segment_width, width, height, is_top):
+    """
+    Calculates the coordinates of a triangle on the board.
+
+    Determines the vertices of a triangular point based on its index and orientation.
+
+    Parameters:
+        index (int): The index of the triangle (0-23).
+        segment_width (float): The width of one board segment.
+        width (int): The total width of the canvas.
+        height (int): The total height of the canvas.
+        is_top (bool): True if the triangle is on the top row, False otherwise.
+
+    Returns:
+        list of float: A list containing the (x, y) coordinates of the triangle's vertices.
+    """
     actual_col = index if index < 6 else (index + 1)
     if is_top:
         x_left = width - actual_col * segment_width
@@ -90,6 +135,19 @@ def get_triangle_coords(index, segment_width, width, height, is_top):
 
 
 def calculate_target_index(start_index, distance, for_ai):
+    """
+    Calculates the target index based on the start index and distance.
+
+    Adjusts the target index calculation based on whether the move is for the AI.
+
+    Parameters:
+        start_index (int): The starting index of the move (0-23).
+        distance (int): The distance to move.
+        for_ai (bool): True if the move is for the AI, False otherwise.
+
+    Returns:
+        int or None: The target index after moving, or None if out of bounds.
+    """
     if for_ai:
         start_index = 23 - start_index
     target = start_index - distance
@@ -99,36 +157,87 @@ def calculate_target_index(start_index, distance, for_ai):
 
 
 def get_triangle_index_and_orientation(index):
+    """
+    Determines the triangle index and its orientation (top or bottom).
+
+    Parameters:
+        index (int): The index of the triangle (0-23).
+
+    Returns:
+        tuple: A tuple containing the adjusted index and a boolean indicating if it's on the top.
+    """
     if index >= 12:
         return 23 - index, True
     return 11 - index, False
 
 
 class Triangle:
+    """
+    Represents a triangle on the Backgammon board.
+
+    Each triangle can hold a number of white and black pieces and can be highlighted for possible moves.
+    """
+
     def __init__(self, index):
+        """
+        Initializes a Triangle instance.
+
+        Sets up the initial state with no pieces and no highlight.
+
+        Parameters:
+            index (int): The index of the triangle (0-23).
+        """
         self.index = index
         self.pieces_white = 0
         self.pieces_black = 0
         self.highlight_color = None
 
     def add_piece(self, color):
+        """
+        Adds a piece of the specified color to the triangle.
+
+        Parameters:
+            color (str): The color of the piece ("white" or "black").
+        """
         if color == 'white':
             self.pieces_white += 1
         else:
             self.pieces_black += 1
 
     def remove_piece(self, color):
+        """
+        Removes a piece of the specified color from the triangle.
+
+        Parameters:
+            color (str): The color of the piece to remove ("white" or "black").
+        """
         if color == 'white' and self.pieces_white > 0:
             self.pieces_white -= 1
         elif color == 'black' and self.pieces_black > 0:
             self.pieces_black -= 1
 
     def can_move(self, color):
+        """
+        Determines if a piece of the specified color can move from this triangle.
+
+        A move is possible if the opponent has fewer than two pieces on this triangle.
+
+        Parameters:
+            color (str): The color of the player ("white" or "black").
+
+        Returns:
+            bool: True if a move is possible, False otherwise.
+        """
         opponent_count = self.pieces_black if color == 'white' else self.pieces_white
         return opponent_count < 2
 
 
 class Dice:
+    """
+    Manages the dice mechanics in the game.
+
+    Handles rolling, tracking used rolls, and rendering dice on the game board.
+    """
 
     def __init__(self):
         """
@@ -143,6 +252,16 @@ class Dice:
         self.moves_used = 0
 
     def roll(self):
+        """
+        Rolls the dice for the current turn.
+
+        Generates two random integers between 1 and 6. If both dice show the same number,
+        it sets up four moves of that number (doubles). Otherwise, it sets up two distinct moves.
+
+        Logs the result of the roll.
+
+        Does nothing if the dice have already been rolled for the current turn.
+        """
         if self.has_rolled:
             logging.info("Already rolled")
             return
@@ -156,6 +275,11 @@ class Dice:
         logging.info(f"Dice rolled: {self.rolls}")
 
     def reset_roll(self):
+        """
+        Resets the dice to their initial unrolled state.
+
+        Clears all current rolls, used rolls, and resets the rolled flag.
+        """
         self.has_rolled = False
         self.rolls = []
         self.used_rolls = []
@@ -163,6 +287,17 @@ class Dice:
         self.moves_used = 0
 
     def use_distance(self, distance):
+        """
+        Marks a distance as used based on the current rolls.
+
+        Attempts to use a single roll matching the distance. If not possible,
+        it checks for multiple rolls that sum up to the distance.
+
+        Logs the action taken or warns if the distance cannot be used.
+
+        Parameters:
+            distance (int): The distance to be used for moving a piece.
+        """
         if not self.rolls:
             return
 
@@ -197,6 +332,17 @@ class Dice:
             logging.info("Exhausted moves for doubles.")
 
     def remove_combination_that_sums(self, target, chosen, start_index):
+        """
+        Recursively attempts to find a combination of rolls that sum to the target.
+
+        Parameters:
+            target (int): The target sum to achieve.
+            chosen (list): The current combination of rolls being considered.
+            start_index (int): The current index in the rolls list.
+
+        Returns:
+            bool: True if a valid combination is found and used; False otherwise.
+        """
         if target == 0 and chosen:
             for val in chosen:
                 self.rolls.remove(val)
@@ -216,6 +362,16 @@ class Dice:
         return False
 
     def draw(self, canvas, width, height):
+        """
+        Draws the dice on the provided canvas.
+
+        Represents used and unused dice with different colors and positions.
+
+        Parameters:
+            canvas (tk.Canvas): The canvas on which to draw the dice.
+            width (int): The width of the canvas.
+            height (int): The height of the canvas.
+        """
         if not self.initial_roll_order:
             return
         segment_width = width / 13
@@ -266,6 +422,17 @@ class Dice:
 
 
 def draw_dice_face(canvas, dice_value, x1, y1, x2, y2):
+    """
+    Draws the dots on a die face based on the dice value.
+
+    Parameters:
+        canvas (tk.Canvas): The canvas on which to draw the dice face.
+        dice_value (int): The numerical value of the dice (1-6).
+        x1 (int): The x-coordinate of the top-left corner of the dice.
+        y1 (int): The y-coordinate of the top-left corner of the dice.
+        x2 (int): The x-coordinate of the bottom-right corner of the dice.
+        y2 (int): The y-coordinate of the bottom-right corner of the dice.
+    """
     center_x = (x1 + x2) / 2
     center_y = (y1 + y2) / 2
     radius = (x2 - x1) / 12
@@ -288,8 +455,28 @@ def draw_dice_face(canvas, dice_value, x1, y1, x2, y2):
 
 
 class BackgammonBoard:
+    """
+    Represents the Backgammon game board and manages game logic.
+
+    Handles drawing the board, managing game state, player interactions, AI moves,
+    and communication with the server for networked gameplay.
+    """
 
     def __init__(self, parent, player_color="white", networked=False, client_sock=None):
+        """
+        Initializes a BackgammonBoard instance.
+
+        Sets up the board state, canvas, UI elements, and network thread if applicable.
+
+        Parameters:
+            parent (tk.Frame): The parent Tkinter frame.
+            player_color (str, optional): The color of the player ("white" or "black").
+                                          Defaults to "white".
+            networked (bool, optional): True if the game is networked (multiplayer),
+                                        False for local play against AI. Defaults to False.
+            client_sock (socket.socket, optional): The client socket for networked play.
+                                                   Defaults to None.
+        """
         self.parent = parent
         self.player_color = player_color
         self.networked = networked
@@ -340,6 +527,15 @@ class BackgammonBoard:
             self.network_thread.start()
 
     def update_game_state(self, game_state):
+        """
+        Updates the game state based on data received from the server.
+
+        Synchronizes the local game state with the server-provided state.
+
+        Parameters:
+            game_state (dict): A dictionary containing the updated game state,
+                               including triangles, bar counts, and boreoff counts.
+        """
         for triangle_data in game_state["triangles"]:
             index = triangle_data["index"]
             self.triangles[index].pieces_white = triangle_data["pieces_white"]
@@ -355,10 +551,21 @@ class BackgammonBoard:
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
 
     def update_counters(self):
+        """
+        Updates the bore-off counters on the UI.
+
+        Reflects the current number of borne-off pieces for both players.
+        """
         self.white_counter_label.config(text=f"White: {self.white_boreoff}")
         self.black_counter_label.config(text=f"Black: {self.black_boreoff}")
 
     def perform_bore_off(self):
+        """
+        Handles the bore-off action for the current player.
+
+        Attempts to bear off pieces based on the current dice rolls. If successful,
+        updates the game state and checks for the end of the turn or game.
+        """
         color = self.current_player_color
         home_indices = range(0, 6)
 
@@ -375,6 +582,17 @@ class BackgammonBoard:
         logging.info("No valid pieces to bear off with the current dice.")
 
     def bore_off(self, triangle, color, dice_value):
+        """
+        Bores off a piece from the board.
+
+        Removes a piece from the specified triangle, updates the bore-off count,
+        uses the corresponding dice value, and checks for game end conditions.
+
+        Parameters:
+            triangle (Triangle): The triangle from which to bore off a piece.
+            color (str): The color of the player performing the bore-off ("white" or "black").
+            dice_value (int): The dice value used to perform the bore-off.
+        """
         triangle.remove_piece(color)
         if color == 'white':
             self.white_boreoff += 1
@@ -388,6 +606,15 @@ class BackgammonBoard:
         self.check_game_end()
 
     def move_piece(self, start_index, target_index):
+        """
+        Moves a piece from start_index to target_index.
+
+        Handles capturing opponent pieces if present and updates the game state accordingly.
+
+        Parameters:
+            start_index (int): The index of the triangle from which to move a piece.
+            target_index (int): The index of the triangle to which to move the piece.
+        """
         if not self.your_turn and self.networked is True:
             logging.warning("Not your turn!")
             return
@@ -409,6 +636,15 @@ class BackgammonBoard:
         self.send_game_state()
 
     def reenter_piece(self, color, target_index):
+        """
+        Reenters a piece from the bar onto the board.
+
+        Handles capturing opponent pieces if necessary and updates the bar counts.
+
+        Parameters:
+            color (str): The color of the player reentering a piece ("white" or "black").
+            target_index (int): The index of the triangle where the piece will reenter.
+        """
         triangle = self.triangles[target_index]
         opponent_color = 'white' if color == 'black' else 'black'
         if opponent_color == 'white' and triangle.pieces_white == 1:
@@ -427,6 +663,12 @@ class BackgammonBoard:
         self.send_game_state()
 
     def roll_dice(self):
+        """
+        Rolls the dice for the current player.
+
+        Manages the rolling state, checks for valid moves, highlights reentry options
+        if pieces are on the bar, and updates the game board accordingly.
+        """
         if not self.your_turn and self.networked is True:
             logging.warning("Not your turn!")
             return
@@ -453,6 +695,12 @@ class BackgammonBoard:
         self.check_end_of_turn()
 
     def switch_player(self):
+        """
+        Switches the turn to the next player.
+
+        Toggles the `your_turn` flag, updates the current player color,
+        and initiates AI moves if applicable.
+        """
         self.your_turn = not self.your_turn
         if self.networked is False:
             self.current_player_color = 'white' if self.current_player_color == 'black' else 'black'
@@ -463,10 +711,22 @@ class BackgammonBoard:
         if self.current_player_color == self.ai_color and self.networked is False:
             self.ai_move()
 
+        self.bore_off_button.config(state=tk.DISABLED)
         self.canvas.delete("all")
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
 
     def has_valid_moves(self, color):
+        """
+        Checks if the current player has any valid moves.
+
+        Evaluates all possible moves based on the current dice rolls and board state.
+
+        Parameters:
+            color (str): The color of the player to check ("white" or "black").
+
+        Returns:
+            bool: True if there are valid moves available, False otherwise.
+        """
         if not self.dice.rolls:
             return False
 
@@ -492,6 +752,18 @@ class BackgammonBoard:
         return False
 
     def check_bearing_off(self, is_ai):
+        """
+        Checks if the player can bear off their pieces.
+
+        Evaluates whether all pieces are in the home zone and no pieces are on the bar
+        to determine if bearing off is possible.
+
+        Parameters:
+            is_ai (bool): True if checking for AI, False for human player.
+
+        Returns:
+            bool: True if bearing off is possible, False otherwise.
+        """
         home_indices = range(0, 6) if not is_ai else range(18, 24)
         current_color = self.current_player_color if not is_ai else self.ai_color
 
@@ -518,12 +790,22 @@ class BackgammonBoard:
         return True
 
     def check_end_of_turn(self):
+        """
+        Checks if the current turn should end based on dice usage and valid moves.
+
+        If there are no remaining dice or no valid moves, it resets the dice and switches the turn.
+        """
         if not self.dice.rolls or not self.has_valid_moves(self.current_player_color):
             logging.info(f"{self.current_player_color.capitalize()} has no dice left. Switching turn.")
             self.dice.reset_roll()
             self.switch_player()
 
     def check_game_end(self):
+        """
+        Checks if the game has ended and declares the winner.
+
+        Determines if either player has borne off all their pieces and ends the game if so.
+        """
         if self.white_boreoff == 15:
             logging.info("White has won!")
             self.end_game()
@@ -532,11 +814,22 @@ class BackgammonBoard:
             self.end_game()
 
     def end_game(self):
+        """
+        Ends the game and closes the application.
+
+        Clears the canvas and terminates the Tkinter main loop.
+        """
         logging.info("Game over!")
         self.canvas.delete("all")
         self.parent.destroy()
 
     def ai_move(self):
+        """
+        Handles the AI's move logic.
+
+        Automates the AI's decision-making process to perform valid moves based on dice rolls,
+        including reentry from the bar and bearing off.
+        """
         if self.current_player_color != self.ai_color:
             return
 
@@ -594,6 +887,11 @@ class BackgammonBoard:
         self.check_end_of_turn()
 
     def ai_bear_off(self):
+        """
+        Handles the AI's bearing off logic.
+
+        If the AI can bear off, it attempts to remove pieces from the home zone based on dice rolls.
+        """
         color = self.ai_color
         if not self.check_bearing_off(is_ai=True):
             return
@@ -634,6 +932,17 @@ class BackgammonBoard:
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
 
     def find_ai_start_for_roll(self, roll):
+        """
+        Finds a starting index for the AI to make a move based on the roll.
+
+        Searches for a valid starting triangle that can move based on the current roll.
+
+        Parameters:
+            roll (int): The dice value being considered for the move.
+
+        Returns:
+            int or None: The index of the triangle to move from, or None if no valid move found.
+        """
         for index, triangle in enumerate(self.triangles):
             count = triangle.pieces_white if self.ai_color == 'white' else triangle.pieces_black
             if count > 0:
@@ -643,6 +952,14 @@ class BackgammonBoard:
         return None
 
     def ai_reentry(self):
+        """
+        Handles the AI's reentry from the bar.
+
+        Attempts to reenter pieces from the bar based on available dice rolls.
+
+        Returns:
+            bool: True if a reentry move was made, False otherwise.
+        """
         used_any_die = False
 
         for roll in self.dice.rolls[:]:
@@ -657,11 +974,27 @@ class BackgammonBoard:
         return used_any_die
 
     def on_resize(self, event):
+        """
+        Handles the resizing of the canvas.
+
+        Recalculates segment width and redraws the board to fit the new dimensions.
+
+        Parameters:
+            event (tk.Event): The event object containing resize information.
+        """
         self.segment_width = event.width / 13.0
         self.canvas.delete("all")
         self.draw_board(event.width, event.height)
 
     def on_triangle_click(self, event):
+        """
+        Handles the click event on the canvas to select and move pieces.
+
+        Determines which triangle was clicked and processes selection or movement based on game state.
+
+        Parameters:
+            event (tk.Event): The event object containing click coordinates.
+        """
         if not self.your_turn and self.networked is True:
             logging.warning("Not your turn!")
             return
@@ -745,6 +1078,18 @@ class BackgammonBoard:
         self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
 
     def get_triangle_index_by_click(self, x, y):
+        """
+        Determines the triangle index based on the click coordinates.
+
+        Calculates which triangle on the board was clicked based on the (x, y) coordinates.
+
+        Parameters:
+            x (int): The x-coordinate of the click event.
+            y (int): The y-coordinate of the click event.
+
+        Returns:
+            int or None: The index of the clicked triangle (0-23), or None if click is invalid.
+        """
         if not self.segment_width:
             return None
         col = int(x // self.segment_width)
@@ -760,12 +1105,36 @@ class BackgammonBoard:
         return index if 0 <= index < 24 else None
 
     def reentry_distance_for_index(self, target_index):
+        """
+        Determines the distance used for reentry based on the target index.
+
+        Calculates the corresponding dice value needed to reenter a piece at the specified index.
+
+        Parameters:
+            target_index (int): The index of the triangle where the piece will reenter.
+
+        Returns:
+            int or None: The distance (dice value) used for reentry, or None if invalid.
+        """
         dist = 24 - target_index
         if 18 <= target_index <= 23 and dist in self.dice.rolls:
             return dist
         return None
 
     def get_reentry_index(self, is_ai, dice_value):
+        """
+        Gets the reentry index based on dice value and player type.
+
+        Determines the appropriate triangle index for reentry based on the dice roll
+        and whether the player is AI or human.
+
+        Parameters:
+            is_ai (bool): True if the player is AI, False otherwise.
+            dice_value (int): The dice value being used for reentry.
+
+        Returns:
+            int or None: The target triangle index for reentry, or None if invalid.
+        """
         if is_ai:
             reentry_index = dice_value - 1
             if 0 <= reentry_index <= 5 and self.triangles[reentry_index].can_move(self.ai_color):
@@ -777,6 +1146,15 @@ class BackgammonBoard:
         return None
 
     def highlight_possible_moves(self, start_index):
+        """
+        Highlights possible moves from the selected triangle.
+
+        Evaluates all potential moves based on current dice rolls and updates the UI
+        to indicate valid target triangles.
+
+        Parameters:
+            start_index (int): The index of the selected triangle.
+        """
         self.reset_highlights()
 
         if not self.dice.rolls:
@@ -825,6 +1203,11 @@ class BackgammonBoard:
             logging.debug(f"Highlighted possible moves: {greens}")
 
     def highlight_bar_reentry_options(self):
+        """
+        Highlights possible reentry options from the bar.
+
+        Evaluates available dice rolls and updates the UI to indicate valid reentry triangles.
+        """
         can_reenter = False
         self.reset_highlights()
         for d in self.dice.rolls:
@@ -839,10 +1222,27 @@ class BackgammonBoard:
             self.switch_player()
 
     def reset_highlights(self):
+        """
+        Resets all triangle highlights.
+
+        Clears any previous move highlights to prepare for new move evaluations.
+        """
         for t in self.triangles:
             t.highlight_color = None
 
     def is_combined_move_partially_valid(self, start_index, dice_pair):
+        """
+        Checks if a combined move is partially valid.
+
+        Evaluates whether combining two dice rolls results in a valid move.
+
+        Parameters:
+            start_index (int): The index of the starting triangle.
+            dice_pair (list of int): A list containing two dice values.
+
+        Returns:
+            bool: True if the combined move is valid, False otherwise.
+        """
         first_move, second_move = dice_pair
         first_target = calculate_target_index(start_index, first_move, for_ai=False)
         second_target = calculate_target_index(start_index, second_move, for_ai=False)
@@ -854,6 +1254,19 @@ class BackgammonBoard:
         return False
 
     def is_partial_double_move_valid(self, start_index, face, count):
+        """
+        Checks if a partial double move is valid.
+
+        Determines if multiple moves using the same dice face are possible.
+
+        Parameters:
+            start_index (int): The index of the starting triangle.
+            face (int): The dice face value being used.
+            count (int): The number of times the dice face is used.
+
+        Returns:
+            bool: True if all partial moves are valid, False otherwise.
+        """
         current_index = start_index
         color = self.current_player_color
 
@@ -865,6 +1278,15 @@ class BackgammonBoard:
         return True
 
     def draw_board(self, width, height):
+        """
+        Draws the entire board.
+
+        Renders the bar, triangles, pieces, and dice on the canvas.
+
+        Parameters:
+            width (int): The width of the canvas.
+            height (int): The height of the canvas.
+        """
         bar_left = 6 * self.segment_width
         bar_right = 7 * self.segment_width
         self.canvas.create_rectangle(bar_left, 0, bar_right, height, fill=BAR_COLOR, outline="black")
@@ -875,6 +1297,15 @@ class BackgammonBoard:
         self.draw_bar_pieces()
 
     def draw_triangles(self, width, height):
+        """
+        Draws all the triangles on the board.
+
+        Iterates through each triangle and renders it on the canvas with appropriate colors.
+
+        Parameters:
+            width (int): The width of the canvas.
+            height (int): The height of the canvas.
+        """
         for index in range(24):
             i, is_top = get_triangle_index_and_orientation(index)
             coords = get_triangle_coords(i, self.segment_width, width, height, is_top)
@@ -882,6 +1313,15 @@ class BackgammonBoard:
             self.canvas.create_polygon(*coords, fill=fill_color, outline="black")
 
     def draw_pieces(self, width, height):
+        """
+        Draws all the pieces on the board.
+
+        Renders white and black pieces on their respective triangles.
+
+        Parameters:
+            width (int): The width of the canvas.
+            height (int): The height of the canvas.
+        """
         piece_radius = max(5, int(min(width, height) / 40))
         distance_y = 2 * piece_radius
 
@@ -907,9 +1347,25 @@ class BackgammonBoard:
         draw_pieces_on_column([self.triangles[x] for x in top_indices], 20, 1)
 
     def draw_one_piece(self, x, y, color, radius):
+        """
+        Draws a single game piece.
+
+        Renders an oval representing a piece at the specified coordinates.
+
+        Parameters:
+            x (float): The x-coordinate of the center of the piece.
+            y (float): The y-coordinate of the center of the piece.
+            color (str): The color of the piece ("white" or "black").
+            radius (int): The radius of the piece.
+        """
         self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="black", width=2)
 
     def draw_bar_pieces(self):
+        """
+        Draws the pieces on the bar.
+
+        Renders white and black pieces that are currently on the bar.
+        """
         bar_left = 6 * self.segment_width
         bar_right = 7 * self.segment_width
         bar_mid_x = (bar_left + bar_right) / 2
@@ -937,6 +1393,12 @@ class BackgammonBoard:
             )
 
     def send_game_state(self):
+        """
+        Sends the current game state to the server.
+
+        Serializes and transmits the game state, including triangles, bar counts,
+        and boreoff counts, to synchronize with the server.
+        """
         game_state = {
             "triangles": [
                 {"index": t.index, "pieces_white": t.pieces_white, "pieces_black": t.pieces_black}
@@ -951,7 +1413,20 @@ class BackgammonBoard:
 
 
 class MainMenu:
+    """
+    Represents the main menu of the Backgammon game.
+
+    Provides options to play against AI or another human player.
+    """
     def __init__(self, root):
+        """
+        Initializes the MainMenu instance.
+
+        Sets up the main menu UI with options to play against AI or another human.
+
+        Parameters:
+            root (tk.Tk): The root Tkinter window.
+        """
         self.sub_frame = None
         self.frame_board = None
         self.board_app = None
@@ -968,6 +1443,11 @@ class MainMenu:
         button_human.pack(pady=5)
 
     def menu_vs_ai(self):
+        """
+        Handles the selection of playing against AI.
+
+        Destroys the main menu and presents options to choose the player's color.
+        """
         self.menu_frame.destroy()
         self.sub_frame = tk.Frame(self.root, padx=20, pady=20)
         self.sub_frame.pack()
@@ -982,6 +1462,11 @@ class MainMenu:
         button_black.pack(pady=5)
 
     def menu_vs_human(self):
+        """
+        Handles the selection of playing against a human via network.
+
+        Destroys the main menu and initiates a connection to the server.
+        """
         self.menu_frame.destroy()
         self.sub_frame = tk.Frame(self.root, padx=20, pady=20)
         self.sub_frame.pack()
@@ -992,6 +1477,13 @@ class MainMenu:
         threading.Thread(target=self.connect_to_server, daemon=True).start()
 
     def connect_to_server(self):
+        """
+        Connects to the game server for multiplayer gameplay.
+
+        Attempts to establish a socket connection to the server and initializes the game board
+        upon successful connection. Handles connection errors gracefully by providing feedback
+        and retry options to the user.
+        """
         global client_socket
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1021,6 +1513,19 @@ class MainMenu:
             retry_button.pack(pady=5)
 
     def start_board(self, is_white, networked=False, client_sock=None):
+        """
+        Initializes the game board.
+
+        Destroys any existing sub-frames and sets up the BackgammonBoard instance along with the
+        "Roll Dice" button.
+
+        Parameters:
+            is_white (bool): True if the player chooses white, False for black.
+            networked (bool, optional): True if the game is networked (multiplayer),
+                                        False for local play against AI. Defaults to False.
+            client_sock (socket.socket, optional): The client socket for networked play.
+                                                   Defaults to None.
+        """
         if self.sub_frame is not None:
             self.sub_frame.destroy()
         self.frame_board = tk.Frame(self.root)
@@ -1035,6 +1540,11 @@ class MainMenu:
 
 
 def main():
+    """
+    The main entry point for the Backgammon game.
+
+    Initializes the Tkinter root window, sets its size, and launches the MainMenu.
+    """
     root = tk.Tk()
     root.geometry("800x600")
     MainMenu(root)
