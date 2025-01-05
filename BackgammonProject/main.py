@@ -237,7 +237,7 @@ class BackgammonBoard:
         self.ai_bear_off()
 
         if ((self.ai_color == 'white' and self.bar_white == 0) or
-                (self.ai_color == 'black' and self.bar_black == 0)) and self.dice.rolls:
+            (self.ai_color == 'black' and self.bar_black == 0)) and self.dice.rolls:
 
             while self.dice.rolls:
                 for roll in self.dice.rolls[:]:
@@ -256,7 +256,7 @@ class BackgammonBoard:
                     break
 
         # if not self.dice.rolls or not move_made:
-            # ("AI has no valid moves or finished its dice. Passing turn.")
+        # ("AI has no valid moves or finished its dice. Passing turn.")
         self.check_end_of_turn()
 
     def ai_bear_off(self):
@@ -617,7 +617,7 @@ class BackgammonBoard:
             self.canvas.delete("all")
             self.draw_board(self.canvas.winfo_width(), self.canvas.winfo_height())
         # else:
-            # print("Already rolled")
+        # print("Already rolled")
 
     def draw_board(self, width, height):
         bar_left = 6 * self.segment_width
@@ -764,18 +764,18 @@ class Dice:
                         self.rolls.remove(face)
                         self.used_rolls.append(face)
                         self.moves_used += 1
-                    # print(f"Used double dice multiple: {distance} ({k}×{face})")
-                    # if not self.rolls:
-                        # print("Exhausted moves for doubles.")
+                    print(f"Used double dice multiple: {distance} ({k}×{face})")
+                    if not self.rolls:
+                        print("Exhausted moves for doubles.")
                     return
 
-        # if self._remove_combination_that_sums(distance, [], 0):
-            # print(f"Used combined dice = {distance}")
-        # else:
-            # print(f"Could not use distance = {distance} with dice = {self.rolls}")
+        if self._remove_combination_that_sums(distance, [], 0):
+            print(f"Used combined dice = {distance}")
+        else:
+            print(f"Could not use distance = {distance} with dice = {self.rolls}")
 
-        # if len(set(self.initial_roll_order)) == 1 and not self.rolls:
-            # print("Exhausted moves for doubles.")
+        if len(set(self.initial_roll_order)) == 1 and not self.rolls:
+            print("Exhausted moves for doubles.")
 
     def _remove_combination_that_sums(self, target, chosen, start_index):
         if target == 0 and chosen:
